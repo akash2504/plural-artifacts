@@ -1,65 +1,74 @@
-## Welcome to plural-artifacts
+# Welcome to Your Plural Repo
 
-This is a central repository for packaging all the applications we're managing within Plural.  In general, there's a common structure to the layout of all these apps:
+This is the repo that will house all your Plural installations for this cluster.  We'll give you a quick walkthrough how everything works here.  In general, there are two commands you'll run in your Plural workflow:
 
 ```
-<app-name>/
-- helm // helm charts for the app
-- terraform // terraform modules for the app
-- plural // plural metadata
-repository.yaml // repository specification
+plural build // generates infrastructure as code for your installations
+plural deploy // deploys your IAC resources in dependency-order
 ```
 
-There's also a Makefile with some useful utilities for managing these files.
 
-### Adding a new application
+If you want to install a new app, you can run:
 
-To add a new application, you'll want to run `plural create` and answer the brief questionnaire. This will generate the above directory structure with stub implementations for most of the basic resources. Generally we try to extend the existing upstream Helm packaging, so you'll ideally want to find an already working Helm chart, research its configuration and modify it appropriately.  General rules of thumb are:
-
-* Replace all built-in stateful services
-    - Many charts will bake in a Bitnami Postgres Helm chart. You'll want to replace this with our Zalando Postgres operator setup which will have backup/restore and high availability set up already
-    - Some apps use Elasticsearch, Kafka, MongoDB, etc.  We have operator setups in the catalog for these applications that you can use here
-    - Frequently, Redis can be left as-is if it's purely used for memory caching. We leave this to the judgement of the user
-* Try to build out as many config overlays and runbooks as possible. You can look to [Airflow](https://github.com/pluralsh/plural-artifacts/tree/f9fda1a23782739c80200ebb6da11076eeb8de9c/airflow/helm/airflow/templates) and [Airbyte](https://github.com/pluralsh/plural-artifacts/tree/main/airbyte/helm/airbyte/templates) for inspiration for how to do this.
-* If the app supports OIDC, ensure this is configurable.
-
-
-You can learn more about all the custom resources that can be used when building out the packaging for an application [here](https://docs.plural.sh/adding-new-application/guide) as well. 
-
-### Upgrading an application
-
-The upgrade process usually involves two main steps:
-
-* figure out how to update the app's Helm chart
-* test it using `plural link`
-
-To test, you'll need to already have the app installed in some cluster.  The `plural link command works similarly to yarn or npm link if you're familiar with either. Basically, within the installation repo for that app, run:
-
-```sh
-plural link {helm|terraform} <app-name> --path ../plural-artifacts/<app-name>/{helm|terraform}/<package-name> --name <package-name>
+```
+plural bundle install APP BUNDLE_NAME
 ```
 
-Then you can run:
+and you can discover the various cloud provider bundles for an app with `plural bundle list APP`. To traverse our marketplace, run `plural repos list` or go to [https://app.plural.sh/marketplace](https://app.plural.sh/marketplace)
+If you want an at-a-glance view of the health of any application, you can run:
 
-```sh
-plural build --only <app-name> --force
-plural deploy
+```
+plural watch APP_NAME
 ```
 
-This deploys the app with the local link you established. The `--force` flag will prevent any deduping w/in the Plural CLI from triggering.
+but the best way to manage and monitor your applications is with the Plural Console, which you can install with `plural bundle install console console-{aws,gcp,azure,etc}`.  We strongly recommend doing this.
 
-### Helpful utilities
+## Workspace Structure
 
-If you're frequently updating Helm dependencies, it can be complicated to sync them locally. To make this easier, you can just run:
+We generate infrastructure as code resources in a consistent format:
 
-```sh
-make helm-dependencies-<app>
+```
+<app>
+- helm
+  - <app>
+    - helm
+      - templates
+        - ...
+      - values.yaml # custom config values you provide
+      - default-values.yaml # configuration we generate w/ `plural build`
+- terraform
+  - <submodule>
+    - ...
+  - main.tf # can override submodule configuration here, see that file for more info
 ```
 
-If you have publish access to this repo, you can publish your changes directly with the following command:
+In general we expect you to customize the repo as you wish, and any standard Terraform or Helm command should work as expected.  Let's say you wanted to switch the database for an app to RDS. To do this, you can use the app's dedicated Terraform folder in the repo to define the database and inject its secret into Kubernetes right there.
+There are two other metadata files you should be aware of as well:
 
-```sh
-make upload-<app>
+* `context.yaml` - this is the initial app configuration you provide when running `plural bundle install`.  We use this to generate the resources that are present in your app folder above.  You can reconfigure settings here if you'd like, or occasionally enable different configurations.  Airbyte basic auth requires a `context.yaml` change for instance.
+
+* `workspace.yaml` - this is the high level workspace metadata about your workspace, like the cloud account, cluster name, dns domain, etc. For the most part, this file should remain read-only.
+
+## Secret Management
+
+We automatically encrypt this repo using a go reimplementation of [git-crypt](https://github.com/AGWA/git-crypt).  You'll be able to see the AES key you're currently using with `plural crypto export`.  We also drop the key fingerprint into the repo at `.keyid` to validate and provide appropriate error messages.
+
+It's strongly recommended you backup this key, and we provide a backup API for you with `plural crypto backups create`.  You can sync any backup with `plural crypto backups resource NAME`.  You can also use popular solutions for this like 1password, Vault or your cloud's secrets manager.
+
+If you reclone this repo on a new machine, its contents will be fully encrypted.  In that case you'll need to set up the encryption credentials for the repo, then run:
+
+```
+plural crypto init
+plural crypto unlock
 ```
 
-**Only do this for apps that have not yet been publicly released**
+
+## Destroying Your Cluster
+
+You can tear down the cluster at any time using `plural destroy`.  If it gets jammed on a specific app, you can simply rerun with `plural destroy --from APP_NAME`.
+
+In break glass scenarios where destroy doesn't want to behave, the bulk of the cloud resources are in the bootstrap app, and you can simply run `cd bootstrap && terraform destroy` manually.  If you encounter this feel free to let us know so we can improve our packaging.
+
+## Support
+
+If you have any issues with plural or any of the apps in the catalog, we pride ourselves on providing prompt support.  You can join our Discord at [https://discord.gg/pluralsh](https://discord.gg/pluralsh) and we'll try to troubleshoot the issue for you.  You can find common troubleshooting tips [here](https://docs.plural.sh/reference/troubleshooting) as well.

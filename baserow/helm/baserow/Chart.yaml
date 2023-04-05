@@ -3,4 +3,4 @@ name: baserow
 description: helm chart for baserow
 type: application
 version: 0.1.1
-appVersion: "v2.397"
+appVersion: "v1.16.0"
